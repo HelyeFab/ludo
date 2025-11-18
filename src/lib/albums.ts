@@ -1,5 +1,4 @@
 import { list, put } from "@vercel/blob";
-import { verifyAdminAuth } from "./auth";
 
 export type Album = {
   id: string;
@@ -42,9 +41,7 @@ export async function getAlbums(): Promise<Album[]> {
 }
 
 export async function saveAlbums(albums: Album[]): Promise<void> {
-  // Verify authentication at data access layer
-  await verifyAdminAuth();
-
+  // Note: Authentication is verified by middleware and API routes
   await put(ALBUMS_INDEX_KEY, JSON.stringify(albums, null, 2), {
     access: "public",
     contentType: "application/json",
@@ -81,9 +78,7 @@ export async function savePhotosForAlbum(
   albumId: string,
   photos: Photo[],
 ): Promise<void> {
-  // Verify authentication at data access layer
-  await verifyAdminAuth();
-
+  // Note: Authentication is verified by middleware and API routes
   const key = photosKey(albumId);
 
   await put(key, JSON.stringify(photos, null, 2), {

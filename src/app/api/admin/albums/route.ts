@@ -76,7 +76,15 @@ export async function POST(req: Request) {
   };
 
   const updated = [...existing, album];
-  await saveAlbums(updated);
 
-  return NextResponse.json({ album });
+  try {
+    await saveAlbums(updated);
+    return NextResponse.json({ album });
+  } catch (error) {
+    console.error("Failed to save albums:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to save album" },
+      { status: 500 }
+    );
+  }
 }
