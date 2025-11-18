@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { put } from "@vercel/blob";
 import {
   getAlbumById,
@@ -7,16 +6,22 @@ import {
   savePhotosForAlbum,
   type Photo,
 } from "@/lib/albums";
+import { validateImageFiles, sanitizeFilename } from "@/lib/validation";
+import { verifyCsrfToken } from "@/lib/csrf";
 
 export async function POST(
   req: Request,
   { params }: { params: { albumId: string } },
 ) {
-  const cookieStore = cookies();
-  const auth = cookieStore.get("admin_auth");
+  // Verify CSRF token from header
+  const csrfToken = req.headers.get("x-csrf-token");
+  const isValidCsrf = await verifyCsrfToken(csrfToken);
 
-  if (!auth || auth.value !== "1") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isValidCsrf) {
+    return NextResponse.json(
+      { error: "Invalid CSRF token" },
+      { status: 403 }
+    );
   }
 
   const albumId = params.albumId;
@@ -27,34 +32,53 @@ export async function POST(
   }
 
   const formData = await req.formData();
-  const files = formData.getAll("photos");
+  const entries = formData.getAll("photos");
 
-  if (!files.length) {
-    return NextResponse.json({ error: "No photos uploaded" }, { status: 400 });
+  // Convert to File array and validate
+  const files: File[] = [];
+  for (const entry of entries) {
+    if (entry instanceof File) {
+      files.push(entry);
+    }
+  }
+
+  // Validate all files
+  const validation = validateImageFiles(files);
+  if (!validation.valid) {
+    return NextResponse.json(
+      { error: validation.error },
+      { status: 400 }
+    );
   }
 
   const existing = await getPhotosForAlbum(albumId);
-
   const newPhotos: Photo[] = [];
 
-  for (const entry of files) {
-    if (!(entry instanceof File)) continue;
-
-    const safeName = entry.name.replace(/[^a-zA-Z0-9.]+/g, "-");
+  // Upload each file
+  for (const file of files) {
+    const safeName = sanitizeFilename(file.name);
     const blobPath = `albums/${albumId}/${crypto.randomUUID()}-${safeName}`;
 
-    const { url } = await put(blobPath, entry, {
-      access: "public",
-      addRandomSuffix: false,
-    });
+    try {
+      const { url } = await put(blobPath, file, {
+        access: "public",
+        addRandomSuffix: true, // Security: prevent path prediction
+      });
 
-    newPhotos.push({
-      id: crypto.randomUUID(),
-      albumId,
-      url,
-      blobPath,
-      createdAt: new Date().toISOString(),
-    });
+      newPhotos.push({
+        id: crypto.randomUUID(),
+        albumId,
+        url,
+        blobPath,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Failed to upload file:", error);
+      return NextResponse.json(
+        { error: `Failed to upload ${file.name}` },
+        { status: 500 }
+      );
+    }
   }
 
   const allPhotos = [...existing, ...newPhotos];

@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getAlbums, saveAlbums, slugify, type Album } from "@/lib/albums";
+import {
+  validateAlbumTitle,
+  validateOptionalText,
+} from "@/lib/validation";
+import { verifyCsrfToken } from "@/lib/csrf";
 
 export async function POST(req: Request) {
-  const cookieStore = cookies();
-  const auth = cookieStore.get("admin_auth");
+  // Verify CSRF token
+  const csrfToken = req.headers.get("x-csrf-token");
+  const isValidCsrf = await verifyCsrfToken(csrfToken);
 
-  if (!auth || auth.value !== "1") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isValidCsrf) {
+    return NextResponse.json(
+      { error: "Invalid CSRF token" },
+      { status: 403 }
+    );
   }
 
   const body = await req.json().catch(() => null);
@@ -20,8 +28,30 @@ export async function POST(req: Request) {
   const quote = typeof body.quote === "string" ? body.quote.trim() : undefined;
   const date = typeof body.date === "string" && body.date.length ? body.date : undefined;
 
-  if (!title) {
-    return NextResponse.json({ error: "Title is required" }, { status: 400 });
+  // Validate title
+  const titleValidation = validateAlbumTitle(title);
+  if (!titleValidation.valid) {
+    return NextResponse.json(
+      { error: titleValidation.error },
+      { status: 400 }
+    );
+  }
+
+  // Validate optional fields
+  const subtitleValidation = validateOptionalText(subtitle, 200);
+  if (!subtitleValidation.valid) {
+    return NextResponse.json(
+      { error: subtitleValidation.error },
+      { status: 400 }
+    );
+  }
+
+  const quoteValidation = validateOptionalText(quote, 500);
+  if (!quoteValidation.valid) {
+    return NextResponse.json(
+      { error: quoteValidation.error },
+      { status: 400 }
+    );
   }
 
   const existing = await getAlbums();

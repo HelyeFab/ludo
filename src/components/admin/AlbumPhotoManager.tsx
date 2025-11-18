@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Album, Photo } from "@/lib/albums";
 import Image from "next/image";
 import Link from "next/link";
@@ -14,6 +14,15 @@ export default function AlbumPhotoManager({ album, initialPhotos }: Props) {
   const [photos, setPhotos] = useState<Photo[]>(initialPhotos);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [csrfToken, setCsrfToken] = useState<string | null>(null);
+
+  // Fetch CSRF token on mount
+  useEffect(() => {
+    fetch("/api/admin/csrf")
+      .then((res) => res.json())
+      .then((data) => setCsrfToken(data.csrfToken))
+      .catch(() => setError("Failed to initialize security token"));
+  }, []);
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,6 +30,11 @@ export default function AlbumPhotoManager({ album, initialPhotos }: Props) {
     const fileInput = form.elements.namedItem("photos") as HTMLInputElement | null;
     if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
       setError("Please select at least one photo.");
+      return;
+    }
+
+    if (!csrfToken) {
+      setError("Security token not available. Please refresh the page.");
       return;
     }
 
@@ -32,6 +46,9 @@ export default function AlbumPhotoManager({ album, initialPhotos }: Props) {
     try {
       const res = await fetch(`/api/admin/albums/${album.id}/photos`, {
         method: "POST",
+        headers: {
+          "x-csrf-token": csrfToken,
+        },
         body: formData,
       });
 
