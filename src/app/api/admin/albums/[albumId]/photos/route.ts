@@ -11,8 +11,11 @@ import { verifyCsrfToken } from "@/lib/csrf";
 
 export async function POST(
   req: Request,
-  { params }: { params: { albumId: string } },
+  { params }: { params: Promise<{ albumId: string }> },
 ) {
+  // Await params (Next.js 16 requirement)
+  const { albumId } = await params;
+
   // Verify CSRF token from header
   const csrfToken = req.headers.get("x-csrf-token");
   const isValidCsrf = await verifyCsrfToken(csrfToken);
@@ -23,8 +26,6 @@ export async function POST(
       { status: 403 }
     );
   }
-
-  const albumId = params.albumId;
   const album = await getAlbumById(albumId);
 
   if (!album) {

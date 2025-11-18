@@ -7,9 +7,10 @@ export const dynamic = "force-dynamic";
 export default async function AlbumPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
-  const album = await getAlbumBySlug(params.slug);
+  const { slug } = await params;
+  const album = await getAlbumBySlug(slug);
 
   if (!album) {
     return (
