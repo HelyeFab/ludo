@@ -2,10 +2,21 @@
  * Validation utilities for file uploads and user input
  */
 
+import { fileTypeFromBuffer } from "file-type";
+
 // Allowed image MIME types
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+] as const;
+
+// Allowed image MIME types for magic bytes validation (strict)
+const ALLOWED_MAGIC_BYTES_TYPES = [
+  "image/jpeg",
   "image/png",
   "image/gif",
   "image/webp",
@@ -56,7 +67,46 @@ export function validateImageFile(file: File): ValidationResult {
 }
 
 /**
- * Validate multiple image files
+ * Validate image file content using magic bytes (binary signature)
+ * This prevents MIME type spoofing attacks
+ * @param file - File to validate
+ * @returns Validation result
+ */
+export async function validateImageFileContent(
+  file: File
+): Promise<ValidationResult> {
+  try {
+    // Read first 4100 bytes for file type detection
+    const buffer = Buffer.from(await file.slice(0, 4100).arrayBuffer());
+    const detectedType = await fileTypeFromBuffer(buffer);
+
+    if (!detectedType) {
+      return {
+        valid: false,
+        error: "Could not determine file type from content",
+      };
+    }
+
+    // Check if detected type matches allowed types
+    if (!ALLOWED_MAGIC_BYTES_TYPES.includes(detectedType.mime as any)) {
+      return {
+        valid: false,
+        error: `File content is ${detectedType.mime}, which is not an allowed image type`,
+      };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    console.error("Error validating file content:", error);
+    return {
+      valid: false,
+      error: "Failed to validate file content",
+    };
+  }
+}
+
+/**
+ * Validate multiple image files (basic checks only)
  * @param files - Files to validate
  * @returns Validation result
  */
@@ -81,6 +131,34 @@ export function validateImageFiles(files: File[]): ValidationResult {
     const result = validateImageFile(file);
     if (!result.valid) {
       return result;
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate multiple image files with deep content validation
+ * @param files - Files to validate
+ * @returns Validation result
+ */
+export async function validateImageFilesDeep(
+  files: File[]
+): Promise<ValidationResult> {
+  // First do basic validation
+  const basicValidation = validateImageFiles(files);
+  if (!basicValidation.valid) {
+    return basicValidation;
+  }
+
+  // Then validate content (magic bytes) for each file
+  for (const file of files) {
+    const contentValidation = await validateImageFileContent(file);
+    if (!contentValidation.valid) {
+      return {
+        valid: false,
+        error: `${file.name}: ${contentValidation.error}`,
+      };
     }
   }
 

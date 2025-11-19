@@ -89,8 +89,13 @@ export default function AlbumPhotoManager({ album: initialAlbum, initialPhotos }
           continue; // Continue with other files
         }
 
-        const data = (await res.json()) as { photos: Photo[] };
+        const data = (await res.json()) as { photos: Photo[]; csrfToken?: string };
         uploadedPhotos.push(...data.photos);
+
+        // Update CSRF token if provided
+        if (data.csrfToken) {
+          setCsrfToken(data.csrfToken);
+        }
       }
 
       if (uploadedPhotos.length > 0) {
@@ -140,7 +145,14 @@ export default function AlbumPhotoManager({ album: initialAlbum, initialPhotos }
             return;
           }
 
+          const data = (await res.json()) as { ok: boolean; csrfToken?: string };
           setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+
+          // Update CSRF token if provided
+          if (data.csrfToken) {
+            setCsrfToken(data.csrfToken);
+          }
+
           success("Photo deleted successfully!");
         } catch {
           showError("Something went wrong. Please try again.");
@@ -175,8 +187,14 @@ export default function AlbumPhotoManager({ album: initialAlbum, initialPhotos }
         return;
       }
 
-      const data = (await res.json()) as { album: Album };
+      const data = (await res.json()) as { album: Album; csrfToken?: string };
       setAlbum(data.album);
+
+      // Update CSRF token if provided
+      if (data.csrfToken) {
+        setCsrfToken(data.csrfToken);
+      }
+
       setIsEditingAlbum(false);
       success("Album updated successfully!");
     } catch {

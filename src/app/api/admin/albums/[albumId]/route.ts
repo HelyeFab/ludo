@@ -5,7 +5,7 @@ import {
   saveAlbums,
   getPhotosForAlbum,
 } from "@/lib/albums";
-import { verifyCsrfToken } from "@/lib/csrf";
+import { verifyCsrfToken, refreshCsrfToken } from "@/lib/csrf";
 import { albumSchema } from "@/lib/validation-schemas";
 import { deleteFromB2 } from "@/lib/b2-storage";
 
@@ -60,11 +60,18 @@ export async function PATCH(
 
   try {
     await saveAlbums(albums);
-    return NextResponse.json({ album: updatedAlbum });
+
+    // Refresh CSRF token for next request
+    const newCsrfToken = await refreshCsrfToken();
+
+    return NextResponse.json({ album: updatedAlbum, csrfToken: newCsrfToken });
   } catch (error) {
     console.error("Failed to update album:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to update album" },
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to update album",
+      },
       { status: 500 }
     );
   }
@@ -92,29 +99,42 @@ export async function DELETE(
     return NextResponse.json({ error: "Album not found" }, { status: 404 });
   }
 
-  // Get all photos and delete from storage (B2 or Vercel Blob for legacy)
-  const photos = await getPhotosForAlbum(albumId);
-  for (const photo of photos) {
-    try {
-      // Check if this is a Vercel Blob URL (legacy photos)
-      if (photo.url.includes("blob.vercel-storage.com") || photo.url.includes("public.blob.vercel-storage.com")) {
-        // Delete from Vercel Blob
-        const { del } = await import("@vercel/blob");
-        await del(photo.url);
-      } else {
-        // Delete from B2
-        await deleteFromB2(photo.blobPath);
-      }
-    } catch (error) {
-      console.error("Failed to delete photo from storage:", error);
-      // Continue deleting other photos
-    }
-  }
-
-  // Remove album from albums list
+  // Remove album from albums list immediately
   const allAlbums = await getAlbums();
   const updatedAlbums = allAlbums.filter((a) => a.id !== albumId);
   await saveAlbums(updatedAlbums);
 
-  return NextResponse.json({ ok: true });
+  // Delete photos from storage asynchronously (non-blocking)
+  // Fire and forget - log errors but don't block response
+  const photos = await getPhotosForAlbum(albumId);
+  Promise.resolve().then(async () => {
+    for (const photo of photos) {
+      try {
+        // Check if this is a Vercel Blob URL (legacy photos)
+        if (
+          photo.url.includes("blob.vercel-storage.com") ||
+          photo.url.includes("public.blob.vercel-storage.com")
+        ) {
+          // Delete from Vercel Blob
+          const { del } = await import("@vercel/blob");
+          await del(photo.url);
+        } else {
+          // Delete from B2
+          await deleteFromB2(photo.blobPath);
+        }
+      } catch (error) {
+        console.error(
+          "Async delete failed for photo in album:",
+          albumId,
+          photo.id,
+          error
+        );
+      }
+    }
+  });
+
+  // Refresh CSRF token for next request
+  const newCsrfToken = await refreshCsrfToken();
+
+  return NextResponse.json({ ok: true, csrfToken: newCsrfToken });
 }

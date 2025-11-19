@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAlbums, saveAlbums, slugify, type Album } from "@/lib/albums";
-import { verifyCsrfToken } from "@/lib/csrf";
+import { verifyCsrfToken, refreshCsrfToken } from "@/lib/csrf";
 import { albumSchema } from "@/lib/validation-schemas";
+import {
+  checkRateLimit,
+  getRateLimitIdentifier,
+  RateLimitPresets,
+} from "@/lib/rate-limit";
 
 export async function GET() {
   // Return all albums for verification purposes
@@ -18,15 +23,38 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // Rate limiting check
+  const rateLimitId = getRateLimitIdentifier(req);
+  const rateLimitResult = checkRateLimit(
+    `album-create:${rateLimitId}`,
+    RateLimitPresets.ALBUM_OPERATIONS
+  );
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      {
+        error: "Too many requests. Please try again later.",
+        resetTime: rateLimitResult.resetTime,
+      },
+      {
+        status: 429,
+        headers: {
+          "X-RateLimit-Limit": String(
+            RateLimitPresets.ALBUM_OPERATIONS.maxRequests
+          ),
+          "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+          "X-RateLimit-Reset": String(rateLimitResult.resetTime),
+        },
+      }
+    );
+  }
+
   // Verify CSRF token
   const csrfToken = req.headers.get("x-csrf-token");
   const isValidCsrf = await verifyCsrfToken(csrfToken);
 
   if (!isValidCsrf) {
-    return NextResponse.json(
-      { error: "Invalid CSRF token" },
-      { status: 403 }
-    );
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
   // Parse and validate request body
@@ -68,11 +96,18 @@ export async function POST(req: Request) {
 
   try {
     await saveAlbums(updated);
-    return NextResponse.json({ album });
+
+    // Refresh CSRF token for next request
+    const newCsrfToken = await refreshCsrfToken();
+
+    return NextResponse.json({ album, csrfToken: newCsrfToken });
   } catch (error) {
     console.error("Failed to save albums:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to save album" },
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to save album",
+      },
       { status: 500 }
     );
   }

@@ -79,7 +79,12 @@ export default function AdminDashboard({ initialAlbums }: Props) {
         return;
       }
 
-      const data = (await res.json()) as { album: Album };
+      const data = (await res.json()) as { album: Album; csrfToken?: string };
+
+      // Update CSRF token if provided
+      if (data.csrfToken) {
+        setCsrfToken(data.csrfToken);
+      }
 
       // Add album to local state immediately
       setAlbums((prev) => [...prev, data.album]);

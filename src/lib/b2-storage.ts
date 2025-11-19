@@ -1,4 +1,5 @@
 import B2 from "backblaze-b2";
+import pRetry from "p-retry";
 
 const b2 = new B2({
   applicationKeyId: process.env.B2_APPLICATION_KEY_ID!,
@@ -51,66 +52,94 @@ async function getBucketId(): Promise<string> {
 }
 
 /**
- * Upload a file to B2
+ * Upload a file to B2 with retry logic
  */
 export async function uploadToB2(
   file: File,
   path: string
 ): Promise<{ fileId: string; fileName: string; downloadUrl: string }> {
-  const auth = await authorize();
-  const bucketId = await getBucketId();
+  return pRetry(
+    async () => {
+      const auth = await authorize();
+      const bucketId = await getBucketId();
 
-  // Get upload URL
-  const uploadUrlResponse = await b2.getUploadUrl({
-    bucketId,
-  });
+      // Get upload URL
+      const uploadUrlResponse = await b2.getUploadUrl({
+        bucketId,
+      });
 
-  const uploadUrl = uploadUrlResponse.data.uploadUrl;
-  const uploadAuthToken = uploadUrlResponse.data.authorizationToken;
+      const uploadUrl = uploadUrlResponse.data.uploadUrl;
+      const uploadAuthToken = uploadUrlResponse.data.authorizationToken;
 
-  // Convert File to Buffer
-  const buffer = Buffer.from(await file.arrayBuffer());
+      // Convert File to Buffer
+      const buffer = Buffer.from(await file.arrayBuffer());
 
-  // Upload file
-  const uploadResponse = await b2.uploadFile({
-    uploadUrl,
-    uploadAuthToken,
-    fileName: path,
-    data: buffer,
-    contentType: file.type,
-  });
+      // Upload file
+      const uploadResponse = await b2.uploadFile({
+        uploadUrl,
+        uploadAuthToken,
+        fileName: path,
+        data: buffer,
+        contentType: file.type,
+      });
 
-  const downloadUrl = `${auth.downloadUrl}/file/${process.env.B2_BUCKET_NAME}/${path}`;
+      const downloadUrl = `${auth.downloadUrl}/file/${process.env.B2_BUCKET_NAME}/${path}`;
 
-  return {
-    fileId: uploadResponse.data.fileId,
-    fileName: uploadResponse.data.fileName,
-    downloadUrl,
-  };
+      return {
+        fileId: uploadResponse.data.fileId,
+        fileName: uploadResponse.data.fileName,
+        downloadUrl,
+      };
+    },
+    {
+      retries: 3,
+      onFailedAttempt: (error) => {
+        console.log(
+          `Upload attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`,
+          error.message
+        );
+      },
+    }
+  );
 }
 
 /**
- * Delete a file from B2
+ * Delete a file from B2 with retry logic
  */
 export async function deleteFromB2(fileName: string): Promise<void> {
   await authorize();
 
   try {
-    // Get file info first
-    const fileVersions = await b2.listFileVersions({
-      bucketId: await getBucketId(),
-      startFileName: fileName,
-      maxFileCount: 1,
-    });
+    await pRetry(
+      async () => {
+        // Get file info first
+        const fileVersions = await b2.listFileVersions({
+          bucketId: await getBucketId(),
+          startFileName: fileName,
+          maxFileCount: 1,
+        });
 
-    const file = fileVersions.data.files.find((f: any) => f.fileName === fileName);
+        const file = fileVersions.data.files.find(
+          (f: any) => f.fileName === fileName
+        );
 
-    if (file) {
-      await b2.deleteFileVersion({
-        fileId: file.fileId,
-        fileName: file.fileName,
-      });
-    }
+        if (file) {
+          await b2.deleteFileVersion({
+            fileId: file.fileId,
+            fileName: file.fileName,
+          });
+        }
+      },
+      {
+        retries: 2,
+        onFailedAttempt: (error) => {
+          console.log(
+            `Delete attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`,
+            fileName
+          );
+        },
+      }
+    );
   } catch (error) {
     console.error("Failed to delete from B2:", fileName, error);
     // Don't throw - file might already be deleted

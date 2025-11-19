@@ -48,3 +48,14 @@ export async function getCsrfToken(): Promise<string | null> {
   const csrfCookie = cookieStore.get("csrf_token");
   return csrfCookie?.value || null;
 }
+
+/**
+ * Refresh CSRF token - generates new token and sets it in cookies
+ * This should be called after each successful mutating request for defense in depth
+ * @returns The new CSRF token
+ */
+export async function refreshCsrfToken(): Promise<string> {
+  const newToken = generateCsrfToken();
+  await setCsrfToken(newToken);
+  return newToken;
+}

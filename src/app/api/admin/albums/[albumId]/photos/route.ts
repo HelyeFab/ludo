@@ -5,9 +5,18 @@ import {
   savePhotosForAlbum,
   type Photo,
 } from "@/lib/albums";
-import { validateImageFiles, sanitizeFilename } from "@/lib/validation";
-import { verifyCsrfToken } from "@/lib/csrf";
+import {
+  validateImageFiles,
+  validateImageFilesDeep,
+  sanitizeFilename,
+} from "@/lib/validation";
+import { verifyCsrfToken, refreshCsrfToken } from "@/lib/csrf";
 import { uploadToB2, deleteFromB2 } from "@/lib/b2-storage";
+import {
+  checkRateLimit,
+  getRateLimitIdentifier,
+  RateLimitPresets,
+} from "@/lib/rate-limit";
 
 // Configure route to accept larger file uploads
 export const runtime = 'nodejs';
@@ -15,20 +24,41 @@ export const maxDuration = 60; // 60 seconds timeout
 
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ albumId: string }> },
+  { params }: { params: Promise<{ albumId: string }> }
 ) {
   // Await params (Next.js 16 requirement)
   const { albumId } = await params;
+
+  // Rate limiting check
+  const rateLimitId = getRateLimitIdentifier(req);
+  const rateLimitResult = checkRateLimit(
+    `photo-upload:${rateLimitId}`,
+    RateLimitPresets.PHOTO_UPLOAD
+  );
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      {
+        error: "Too many upload requests. Please try again later.",
+        resetTime: rateLimitResult.resetTime,
+      },
+      {
+        status: 429,
+        headers: {
+          "X-RateLimit-Limit": String(RateLimitPresets.PHOTO_UPLOAD.maxRequests),
+          "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+          "X-RateLimit-Reset": String(rateLimitResult.resetTime),
+        },
+      }
+    );
+  }
 
   // Verify CSRF token from header
   const csrfToken = req.headers.get("x-csrf-token");
   const isValidCsrf = await verifyCsrfToken(csrfToken);
 
   if (!isValidCsrf) {
-    return NextResponse.json(
-      { error: "Invalid CSRF token" },
-      { status: 403 }
-    );
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
   const album = await getAlbumById(albumId);
 
@@ -55,26 +85,33 @@ export async function POST(
     }
   }
 
-  // Validate all files
+  // Validate all files (basic checks)
   const validation = validateImageFiles(files);
   if (!validation.valid) {
-    return NextResponse.json(
-      { error: validation.error },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: validation.error }, { status: 400 });
+  }
+
+  // Deep validation (magic bytes) - prevents MIME type spoofing
+  const deepValidation = await validateImageFilesDeep(files);
+  if (!deepValidation.valid) {
+    return NextResponse.json({ error: deepValidation.error }, { status: 400 });
   }
 
   const existing = await getPhotosForAlbum(albumId);
   const newPhotos: Photo[] = [];
+  const uploadedFiles: { path: string }[] = [];
 
-  // Upload each file to Backblaze B2
-  for (const file of files) {
-    try {
+  try {
+    // Upload each file to Backblaze B2
+    for (const file of files) {
       const photoId = crypto.randomUUID();
       const safeName = sanitizeFilename(file.name);
       const path = `albums/${albumId}/${photoId}-${safeName}`;
 
       const { downloadUrl } = await uploadToB2(file, path);
+
+      // Track uploaded file for potential rollback
+      uploadedFiles.push({ path });
 
       newPhotos.push({
         id: photoId,
@@ -83,19 +120,36 @@ export async function POST(
         blobPath: path,
         createdAt: new Date().toISOString(),
       });
-    } catch (error) {
-      console.error("Failed to upload file:", error);
-      return NextResponse.json(
-        { error: `Failed to upload ${file.name}` },
-        { status: 500 }
+    }
+
+    // Save metadata only after all uploads succeed
+    const allPhotos = [...existing, ...newPhotos];
+    await savePhotosForAlbum(albumId, allPhotos);
+
+    // Refresh CSRF token for next request
+    const newCsrfToken = await refreshCsrfToken();
+
+    return NextResponse.json({ photos: newPhotos, csrfToken: newCsrfToken });
+  } catch (error) {
+    // Transaction rollback: delete already uploaded files from B2
+    console.error("Upload failed, rolling back:", error);
+
+    for (const uploaded of uploadedFiles) {
+      await deleteFromB2(uploaded.path).catch((err) =>
+        console.error("Rollback delete failed:", uploaded.path, err)
       );
     }
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to upload photos. Please try again.",
+      },
+      { status: 500 }
+    );
   }
-
-  const allPhotos = [...existing, ...newPhotos];
-  await savePhotosForAlbum(albumId, allPhotos);
-
-  return NextResponse.json({ photos: newPhotos });
 }
 
 export async function DELETE(
@@ -134,25 +188,33 @@ export async function DELETE(
     return NextResponse.json({ error: "Photo not found" }, { status: 404 });
   }
 
-  // Delete from storage (B2 or Vercel Blob for legacy photos)
-  try {
-    // Check if this is a Vercel Blob URL (legacy photos)
-    if (photoToDelete.url.includes("blob.vercel-storage.com") || photoToDelete.url.includes("public.blob.vercel-storage.com")) {
-      // Delete from Vercel Blob
-      const { del } = await import("@vercel/blob");
-      await del(photoToDelete.url);
-    } else {
-      // Delete from B2
-      await deleteFromB2(photoToDelete.blobPath);
-    }
-  } catch (error) {
-    console.error("Failed to delete photo from storage:", error);
-    // Continue anyway - we'll remove it from the index
-  }
-
-  // Remove from photos list
+  // Remove from photos list immediately
   const updatedPhotos = photos.filter((p) => p.id !== photoId);
   await savePhotosForAlbum(albumId, updatedPhotos);
 
-  return NextResponse.json({ ok: true });
+  // Delete from storage asynchronously (non-blocking)
+  // Fire and forget - log errors but don't fail the request
+  Promise.resolve().then(async () => {
+    try {
+      // Check if this is a Vercel Blob URL (legacy photos)
+      if (
+        photoToDelete.url.includes("blob.vercel-storage.com") ||
+        photoToDelete.url.includes("public.blob.vercel-storage.com")
+      ) {
+        // Delete from Vercel Blob
+        const { del } = await import("@vercel/blob");
+        await del(photoToDelete.url);
+      } else {
+        // Delete from B2
+        await deleteFromB2(photoToDelete.blobPath);
+      }
+    } catch (error) {
+      console.error("Async delete failed for photo:", photoToDelete.id, error);
+    }
+  });
+
+  // Refresh CSRF token for next request
+  const newCsrfToken = await refreshCsrfToken();
+
+  return NextResponse.json({ ok: true, csrfToken: newCsrfToken });
 }
