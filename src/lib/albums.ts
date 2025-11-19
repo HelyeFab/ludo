@@ -1,9 +1,4 @@
-import {
-  saveAlbumsMetadata,
-  loadAlbumsMetadata,
-  savePhotosMetadata,
-  loadPhotosMetadata,
-} from "./local-storage";
+import { put, list } from "@vercel/blob";
 
 export type Album = {
   id: string;
@@ -32,16 +27,28 @@ function photosKey(albumId: string) {
 }
 
 export async function getAlbums(): Promise<Album[]> {
-  const albums = await loadAlbumsMetadata();
-  console.log("[DEBUG] Loaded albums from local storage:", albums.length);
-  return albums;
+  const { blobs } = await list({ prefix: ALBUMS_INDEX_PREFIX, limit: 1 });
+
+  if (!blobs.length) {
+    return [];
+  }
+
+  const res = await fetch(blobs[0].downloadUrl, { cache: "no-store" });
+  if (!res.ok) {
+    return [];
+  }
+
+  const data = (await res.json()) as Album[];
+  return Array.isArray(data) ? data : [];
 }
 
 export async function saveAlbums(albums: Album[]): Promise<void> {
   // Note: Authentication is verified by middleware and API routes
-  console.log("[DEBUG] Saving albums:", albums.length, "albums");
-  await saveAlbumsMetadata(albums);
-  console.log("[DEBUG] Saved to local storage");
+  await put(ALBUMS_INDEX_PREFIX + ".json", JSON.stringify(albums, null, 2), {
+    access: "public",
+    contentType: "application/json",
+    addRandomSuffix: true,
+  });
 }
 
 export async function getAlbumBySlug(slug: string): Promise<Album | null> {
@@ -55,8 +62,18 @@ export async function getAlbumById(id: string): Promise<Album | null> {
 }
 
 export async function getPhotosForAlbum(albumId: string): Promise<Photo[]> {
-  const photos = await loadPhotosMetadata(albumId);
-  return photos;
+  const key = photosKey(albumId);
+  const { blobs } = await list({ prefix: key, limit: 1 });
+
+  if (!blobs.length) {
+    return [];
+  }
+
+  const res = await fetch(blobs[0].downloadUrl, { cache: "no-store" });
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as Photo[];
+  return Array.isArray(data) ? data : [];
 }
 
 export async function savePhotosForAlbum(
@@ -64,7 +81,12 @@ export async function savePhotosForAlbum(
   photos: Photo[],
 ): Promise<void> {
   // Note: Authentication is verified by middleware and API routes
-  await savePhotosMetadata(albumId, photos);
+  const key = photosKey(albumId);
+  await put(key, JSON.stringify(photos, null, 2), {
+    access: "public",
+    contentType: "application/json",
+    addRandomSuffix: true,
+  });
 }
 
 export function slugify(title: string): string {
