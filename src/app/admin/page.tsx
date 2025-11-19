@@ -9,7 +9,7 @@ export default async function AdminPage() {
   // Verify authentication at data access layer
   const session = await verifySessionDAL();
 
-  if (!session.isAuthenticated) {
+  if (!session.isAuthenticated || session.role !== "admin") {
     redirect("/login?from=/admin");
   }
 

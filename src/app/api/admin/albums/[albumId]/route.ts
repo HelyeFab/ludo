@@ -8,12 +8,23 @@ import {
 import { verifyCsrfToken, refreshCsrfToken } from "@/lib/csrf";
 import { albumSchema } from "@/lib/validation-schemas";
 import { deletePhoto } from "@/lib/storage-adapter";
+import { getVerifiedAdminSession } from "@/lib/dal";
 
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ albumId: string }> }
 ) {
   const { albumId } = await params;
+
+  // Verify admin authentication
+  try {
+    await getVerifiedAdminSession();
+  } catch {
+    return NextResponse.json(
+      { error: "Unauthorized: Admin authentication required" },
+      { status: 403 }
+    );
+  }
 
   // Verify CSRF token
   const csrfToken = req.headers.get("x-csrf-token");
@@ -82,6 +93,16 @@ export async function DELETE(
   { params }: { params: Promise<{ albumId: string }> },
 ) {
   const { albumId } = await params;
+
+  // Verify admin authentication
+  try {
+    await getVerifiedAdminSession();
+  } catch {
+    return NextResponse.json(
+      { error: "Unauthorized: Admin authentication required" },
+      { status: 403 }
+    );
+  }
 
   // Verify CSRF token
   const csrfToken = req.headers.get("x-csrf-token");

@@ -7,8 +7,19 @@ import {
   getRateLimitIdentifier,
   RateLimitPresets,
 } from "@/lib/rate-limit";
+import { getVerifiedAdminSession } from "@/lib/dal";
 
 export async function GET() {
+  // Verify admin authentication
+  try {
+    await getVerifiedAdminSession();
+  } catch {
+    return NextResponse.json(
+      { error: "Unauthorized: Admin authentication required" },
+      { status: 403 }
+    );
+  }
+
   // Return all albums for verification purposes
   try {
     const albums = await getAlbums();
@@ -23,6 +34,16 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // Verify admin authentication
+  try {
+    await getVerifiedAdminSession();
+  } catch {
+    return NextResponse.json(
+      { error: "Unauthorized: Admin authentication required" },
+      { status: 403 }
+    );
+  }
+
   // Rate limiting check
   const rateLimitId = getRateLimitIdentifier(req);
   const rateLimitResult = checkRateLimit(

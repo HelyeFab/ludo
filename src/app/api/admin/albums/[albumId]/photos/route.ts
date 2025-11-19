@@ -17,6 +17,7 @@ import {
   getRateLimitIdentifier,
   RateLimitPresets,
 } from "@/lib/rate-limit";
+import { getVerifiedAdminSession } from "@/lib/dal";
 
 // Configure route to accept larger file uploads
 export const runtime = 'nodejs';
@@ -28,6 +29,16 @@ export async function POST(
 ) {
   // Await params (Next.js 16 requirement)
   const { albumId } = await params;
+
+  // Verify admin authentication
+  try {
+    await getVerifiedAdminSession();
+  } catch {
+    return NextResponse.json(
+      { error: "Unauthorized: Admin authentication required" },
+      { status: 403 }
+    );
+  }
 
   // Rate limiting check
   const rateLimitId = getRateLimitIdentifier(req);
@@ -158,6 +169,16 @@ export async function DELETE(
   { params }: { params: Promise<{ albumId: string }> },
 ) {
   const { albumId } = await params;
+
+  // Verify admin authentication
+  try {
+    await getVerifiedAdminSession();
+  } catch {
+    return NextResponse.json(
+      { error: "Unauthorized: Admin authentication required" },
+      { status: 403 }
+    );
+  }
 
   // Verify CSRF token
   const csrfToken = req.headers.get("x-csrf-token");
