@@ -27,13 +27,19 @@ function photosKey(albumId: string) {
 }
 
 export async function getAlbums(): Promise<Album[]> {
-  const { blobs } = await list({ prefix: ALBUMS_INDEX_PREFIX, limit: 1 });
+  // Get all blobs with the prefix (not just 1)
+  const { blobs } = await list({ prefix: ALBUMS_INDEX_PREFIX });
 
   if (!blobs.length) {
     return [];
   }
 
-  const res = await fetch(blobs[0].downloadUrl, { cache: "no-store" });
+  // Sort by uploadedAt descending to get the newest file
+  const sortedBlobs = blobs.sort(
+    (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+  );
+
+  const res = await fetch(sortedBlobs[0].downloadUrl, { cache: "no-store" });
   if (!res.ok) {
     return [];
   }
@@ -63,13 +69,19 @@ export async function getAlbumById(id: string): Promise<Album | null> {
 
 export async function getPhotosForAlbum(albumId: string): Promise<Photo[]> {
   const key = photosKey(albumId);
-  const { blobs } = await list({ prefix: key, limit: 1 });
+  // Get all blobs with the prefix (not just 1)
+  const { blobs } = await list({ prefix: key });
 
   if (!blobs.length) {
     return [];
   }
 
-  const res = await fetch(blobs[0].downloadUrl, { cache: "no-store" });
+  // Sort by uploadedAt descending to get the newest file
+  const sortedBlobs = blobs.sort(
+    (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+  );
+
+  const res = await fetch(sortedBlobs[0].downloadUrl, { cache: "no-store" });
   if (!res.ok) return [];
 
   const data = (await res.json()) as Photo[];
