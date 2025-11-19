@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "src/app/api/admin/albums/[albumId]/photos/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
+}

@@ -9,6 +9,10 @@ import {
 import { validateImageFiles, sanitizeFilename } from "@/lib/validation";
 import { verifyCsrfToken } from "@/lib/csrf";
 
+// Configure route to accept larger file uploads
+export const runtime = 'nodejs';
+export const maxDuration = 60; // 60 seconds timeout
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ albumId: string }> },
