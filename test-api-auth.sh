@@ -35,8 +35,7 @@ rm -f $COOKIE_FILE
 # 0. Login as Admin
 echo "[0/8] Logging in as Admin..."
 LOGIN_RESPONSE=$(curl -s -c $COOKIE_FILE -X POST "$API_BASE/auth/login" \
-    -H "Content-Type: application/json" \
-    -d '{"password": "admin213"}')
+    -F "password=admin213")
 
 LOGIN_OK=$(echo "$LOGIN_RESPONSE" | jq -r '.ok' 2>/dev/null)
 if [ "$LOGIN_OK" = "true" ]; then
@@ -60,7 +59,7 @@ echo ""
 
 # 2. Get CSRF Token
 echo "[2/8] Getting CSRF Token..."
-CSRF_RESPONSE=$(curl -s -b $COOKIE_FILE "$API_BASE/admin/csrf")
+CSRF_RESPONSE=$(curl -s -b $COOKIE_FILE -c $COOKIE_FILE "$API_BASE/admin/csrf")
 CSRF_TOKEN=$(echo "$CSRF_RESPONSE" | jq -r '.csrfToken' 2>/dev/null)
 if [ -n "$CSRF_TOKEN" ] && [ "$CSRF_TOKEN" != "null" ]; then
     test_result 0 "CSRF token retrieved"

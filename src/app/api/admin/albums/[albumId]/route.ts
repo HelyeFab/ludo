@@ -7,7 +7,7 @@ import {
 } from "@/lib/albums";
 import { verifyCsrfToken, refreshCsrfToken } from "@/lib/csrf";
 import { albumSchema } from "@/lib/validation-schemas";
-import { deleteFromB2 } from "@/lib/b2-storage";
+import { deletePhoto } from "@/lib/storage-adapter";
 
 export async function PATCH(
   req: Request,
@@ -110,18 +110,7 @@ export async function DELETE(
   Promise.resolve().then(async () => {
     for (const photo of photos) {
       try {
-        // Check if this is a Vercel Blob URL (legacy photos)
-        if (
-          photo.url.includes("blob.vercel-storage.com") ||
-          photo.url.includes("public.blob.vercel-storage.com")
-        ) {
-          // Delete from Vercel Blob
-          const { del } = await import("@vercel/blob");
-          await del(photo.url);
-        } else {
-          // Delete from B2
-          await deleteFromB2(photo.blobPath);
-        }
+        await deletePhoto(photo.url, photo.blobPath);
       } catch (error) {
         console.error(
           "Async delete failed for photo in album:",

@@ -11,7 +11,7 @@ import {
   sanitizeFilename,
 } from "@/lib/validation";
 import { verifyCsrfToken, refreshCsrfToken } from "@/lib/csrf";
-import { uploadToB2, deleteFromB2 } from "@/lib/b2-storage";
+import { uploadPhoto, deletePhoto } from "@/lib/storage-adapter";
 import {
   checkRateLimit,
   getRateLimitIdentifier,
@@ -102,22 +102,22 @@ export async function POST(
   const uploadedFiles: { path: string }[] = [];
 
   try {
-    // Upload each file to Backblaze B2
+    // Upload each file using storage adapter (B2 or Vercel Blob)
     for (const file of files) {
       const photoId = crypto.randomUUID();
       const safeName = sanitizeFilename(file.name);
       const path = `albums/${albumId}/${photoId}-${safeName}`;
 
-      const { downloadUrl } = await uploadToB2(file, path);
+      const { url, blobPath } = await uploadPhoto(file, path);
 
       // Track uploaded file for potential rollback
-      uploadedFiles.push({ path });
+      uploadedFiles.push({ path: blobPath });
 
       newPhotos.push({
         id: photoId,
         albumId,
-        url: downloadUrl,
-        blobPath: path,
+        url,
+        blobPath,
         createdAt: new Date().toISOString(),
       });
     }
@@ -131,11 +131,12 @@ export async function POST(
 
     return NextResponse.json({ photos: newPhotos, csrfToken: newCsrfToken });
   } catch (error) {
-    // Transaction rollback: delete already uploaded files from B2
+    // Transaction rollback: delete already uploaded files
     console.error("Upload failed, rolling back:", error);
 
     for (const uploaded of uploadedFiles) {
-      await deleteFromB2(uploaded.path).catch((err) =>
+      // Use a placeholder URL since we're just rolling back
+      await deletePhoto("", uploaded.path).catch((err) =>
         console.error("Rollback delete failed:", uploaded.path, err)
       );
     }
@@ -196,18 +197,7 @@ export async function DELETE(
   // Fire and forget - log errors but don't fail the request
   Promise.resolve().then(async () => {
     try {
-      // Check if this is a Vercel Blob URL (legacy photos)
-      if (
-        photoToDelete.url.includes("blob.vercel-storage.com") ||
-        photoToDelete.url.includes("public.blob.vercel-storage.com")
-      ) {
-        // Delete from Vercel Blob
-        const { del } = await import("@vercel/blob");
-        await del(photoToDelete.url);
-      } else {
-        // Delete from B2
-        await deleteFromB2(photoToDelete.blobPath);
-      }
+      await deletePhoto(photoToDelete.url, photoToDelete.blobPath);
     } catch (error) {
       console.error("Async delete failed for photo:", photoToDelete.id, error);
     }
