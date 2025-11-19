@@ -29,19 +29,25 @@ export default async function AdminAlbumPage({
     console.log("[DEBUG] Available albums:", allAlbums.map(a => ({ id: a.id, title: a.title })));
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 p-6">
         <p className="text-sm text-rose-600 dark:text-rose-300">
-          Album not found.
+          Album not found. This usually happens when blob storage is still syncing.
         </p>
-        <p className="text-xs text-rose-400 dark:text-rose-400">
+        <p className="text-xs text-rose-400 dark:text-rose-400 font-mono">
           Looking for ID: {albumId}
         </p>
-        <Link
-          href="/admin"
-          className="text-xs font-medium text-rose-500 underline-offset-4 hover:underline dark:text-rose-300"
-        >
-          ← Back to all moments
-        </Link>
+        <p className="text-xs text-rose-500 dark:text-rose-400">
+          The page will automatically refresh in a moment...
+        </p>
+        <script dangerouslySetInnerHTML={{ __html: 'setTimeout(() => window.location.reload(), 3000);' }} />
+        <div className="flex gap-3">
+          <Link
+            href="/admin"
+            className="inline-flex items-center justify-center rounded-2xl border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:bg-slate-800 dark:text-rose-300 dark:hover:bg-slate-700"
+          >
+            ← Back to all moments
+          </Link>
+        </div>
       </div>
     );
   }

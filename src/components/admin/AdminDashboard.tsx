@@ -81,27 +81,18 @@ export default function AdminDashboard({ initialAlbums }: Props) {
 
       const data = (await res.json()) as { album: Album };
 
-      // Wait for blob storage to propagate (check that we can fetch the albums list back)
-      let verified = false;
-      for (let i = 0; i < 20; i++) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+      // Add album to local state immediately
+      setAlbums((prev) => [...prev, data.album]);
 
-        // Try to fetch albums and see if our new album is there
-        const checkRes = await fetch('/api/admin/albums?verify=' + data.album.id);
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          if (checkData.albums && checkData.albums.some((a: Album) => a.id === data.album.id)) {
-            verified = true;
-            break;
-          }
-        }
-      }
+      // Clear form
+      setTitle("");
+      setSubtitle("");
+      setQuote("");
+      setDate("");
 
-      if (!verified) {
-        setError("Album created but taking longer than expected to be ready. Please refresh the page.");
-        setAlbums((prev) => [...prev, data.album]);
-        return;
-      }
+      // Wait a bit for blob propagation, then navigate
+      // User can also manually click "Manage photos"
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Navigate to album management page
       window.location.href = `/admin/albums/${data.album.id}`;
