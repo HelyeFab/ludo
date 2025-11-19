@@ -27,12 +27,14 @@ export async function GET(
       return new NextResponse("Missing blob URL parameter", { status: 400 });
     }
 
-    // Validate that the URL is from Vercel Blob storage
+    // Validate that the URL is from Backblaze B2 or Vercel Blob (for backward compatibility)
     if (
+      !blobUrl.includes("backblazeb2.com") &&
+      !blobUrl.includes("b2.io") &&
       !blobUrl.includes("blob.vercel-storage.com") &&
       !blobUrl.includes("public.blob.vercel-storage.com")
     ) {
-      return new NextResponse("Invalid blob URL", { status: 400 });
+      return new NextResponse("Invalid URL", { status: 400 });
     }
 
     // Fetch the actual blob

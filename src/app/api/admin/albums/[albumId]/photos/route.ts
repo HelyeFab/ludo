@@ -5,9 +5,9 @@ import {
   savePhotosForAlbum,
   type Photo,
 } from "@/lib/albums";
-import { validateImageFiles } from "@/lib/validation";
+import { validateImageFiles, sanitizeFilename } from "@/lib/validation";
 import { verifyCsrfToken } from "@/lib/csrf";
-import { savePhoto, deletePhoto } from "@/lib/local-storage";
+import { uploadToB2, deleteFromB2 } from "@/lib/b2-storage";
 
 // Configure route to accept larger file uploads
 export const runtime = 'nodejs';
@@ -67,20 +67,24 @@ export async function POST(
   const existing = await getPhotosForAlbum(albumId);
   const newPhotos: Photo[] = [];
 
-  // Upload each file to local storage
+  // Upload each file to Backblaze B2
   for (const file of files) {
     try {
-      const { id, path } = await savePhoto(albumId, file);
+      const photoId = crypto.randomUUID();
+      const safeName = sanitizeFilename(file.name);
+      const path = `albums/${albumId}/${photoId}-${safeName}`;
+
+      const { downloadUrl } = await uploadToB2(file, path);
 
       newPhotos.push({
-        id,
+        id: photoId,
         albumId,
-        url: path, // Local path like /storage/photos/album-id/photo.jpg
-        blobPath: path, // Keep for compatibility
+        url: downloadUrl,
+        blobPath: path,
         createdAt: new Date().toISOString(),
       });
     } catch (error) {
-      console.error("Failed to save file:", error);
+      console.error("Failed to upload file:", error);
       return NextResponse.json(
         { error: `Failed to upload ${file.name}` },
         { status: 500 }
@@ -130,11 +134,11 @@ export async function DELETE(
     return NextResponse.json({ error: "Photo not found" }, { status: 404 });
   }
 
-  // Delete from local storage
+  // Delete from Backblaze B2
   try {
-    await deletePhoto(photoToDelete.url);
+    await deleteFromB2(photoToDelete.blobPath);
   } catch (error) {
-    console.error("Failed to delete photo from local storage:", error);
+    console.error("Failed to delete photo from B2:", error);
     // Continue anyway - we'll remove it from the index
   }
 

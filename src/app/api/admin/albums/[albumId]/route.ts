@@ -7,7 +7,7 @@ import {
 } from "@/lib/albums";
 import { verifyCsrfToken } from "@/lib/csrf";
 import { albumSchema } from "@/lib/validation-schemas";
-import { deleteAlbumPhotos } from "@/lib/local-storage";
+import { deleteFromB2 } from "@/lib/b2-storage";
 
 export async function PATCH(
   req: Request,
@@ -92,12 +92,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Album not found" }, { status: 404 });
   }
 
-  // Delete all photos from local storage
-  try {
-    await deleteAlbumPhotos(albumId);
-  } catch (error) {
-    console.error("Failed to delete album photos:", error);
-    // Continue with album deletion
+  // Get all photos and delete from B2
+  const photos = await getPhotosForAlbum(albumId);
+  for (const photo of photos) {
+    try {
+      await deleteFromB2(photo.blobPath);
+    } catch (error) {
+      console.error("Failed to delete photo from B2:", error);
+      // Continue deleting other photos
+    }
   }
 
   // Remove album from albums list
