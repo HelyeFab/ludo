@@ -92,13 +92,21 @@ export async function DELETE(
     return NextResponse.json({ error: "Album not found" }, { status: 404 });
   }
 
-  // Get all photos and delete from B2
+  // Get all photos and delete from storage (B2 or Vercel Blob for legacy)
   const photos = await getPhotosForAlbum(albumId);
   for (const photo of photos) {
     try {
-      await deleteFromB2(photo.blobPath);
+      // Check if this is a Vercel Blob URL (legacy photos)
+      if (photo.url.includes("blob.vercel-storage.com") || photo.url.includes("public.blob.vercel-storage.com")) {
+        // Delete from Vercel Blob
+        const { del } = await import("@vercel/blob");
+        await del(photo.url);
+      } else {
+        // Delete from B2
+        await deleteFromB2(photo.blobPath);
+      }
     } catch (error) {
-      console.error("Failed to delete photo from B2:", error);
+      console.error("Failed to delete photo from storage:", error);
       // Continue deleting other photos
     }
   }

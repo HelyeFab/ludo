@@ -134,11 +134,19 @@ export async function DELETE(
     return NextResponse.json({ error: "Photo not found" }, { status: 404 });
   }
 
-  // Delete from Backblaze B2
+  // Delete from storage (B2 or Vercel Blob for legacy photos)
   try {
-    await deleteFromB2(photoToDelete.blobPath);
+    // Check if this is a Vercel Blob URL (legacy photos)
+    if (photoToDelete.url.includes("blob.vercel-storage.com") || photoToDelete.url.includes("public.blob.vercel-storage.com")) {
+      // Delete from Vercel Blob
+      const { del } = await import("@vercel/blob");
+      await del(photoToDelete.url);
+    } else {
+      // Delete from B2
+      await deleteFromB2(photoToDelete.blobPath);
+    }
   } catch (error) {
-    console.error("Failed to delete photo from B2:", error);
+    console.error("Failed to delete photo from storage:", error);
     // Continue anyway - we'll remove it from the index
   }
 
