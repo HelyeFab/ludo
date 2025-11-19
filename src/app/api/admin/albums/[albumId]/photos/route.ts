@@ -37,11 +37,19 @@ export async function POST(
   }
 
   const formData = await req.formData();
-  const entries = formData.getAll("photos");
+
+  // Support both single photo and multiple photos upload
+  const photoEntry = formData.get("photo");
+  const photosEntries = formData.getAll("photos");
 
   // Convert to File array and validate
   const files: File[] = [];
-  for (const entry of entries) {
+
+  if (photoEntry instanceof File) {
+    files.push(photoEntry);
+  }
+
+  for (const entry of photosEntries) {
     if (entry instanceof File) {
       files.push(entry);
     }

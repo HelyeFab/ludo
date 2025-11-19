@@ -60,32 +60,46 @@ export default function AlbumPhotoManager({ album: initialAlbum, initialPhotos }
       return;
     }
 
-    const formData = new FormData(form);
-
     setUploading(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/admin/albums/${album.id}/photos`, {
-        method: "POST",
-        headers: {
-          "x-csrf-token": csrfToken,
-        },
-        body: formData,
-      });
+      const files = Array.from(fileInput.files);
+      const uploadedPhotos: Photo[] = [];
 
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        setError(data?.error || "Upload failed. Please try again.");
-        return;
+      // Upload files one by one to avoid payload size limits
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const formData = new FormData();
+        formData.append("photo", file);
+
+        const res = await fetch(`/api/admin/albums/${album.id}/photos`, {
+          method: "POST",
+          headers: {
+            "x-csrf-token": csrfToken,
+          },
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          showError(data?.error || `Failed to upload ${file.name}`);
+          continue; // Continue with other files
+        }
+
+        const data = (await res.json()) as { photos: Photo[] };
+        uploadedPhotos.push(...data.photos);
       }
 
-      const data = (await res.json()) as { photos: Photo[] };
-      setPhotos((prev) => [...prev, ...data.photos]);
-      form.reset();
-      success(`Successfully uploaded ${data.photos.length} photo${data.photos.length === 1 ? "" : "s"}!`);
+      if (uploadedPhotos.length > 0) {
+        setPhotos((prev) => [...prev, ...uploadedPhotos]);
+        form.reset();
+        success(`Successfully uploaded ${uploadedPhotos.length} photo${uploadedPhotos.length === 1 ? "" : "s"}!`);
+      } else {
+        setError("No photos were uploaded successfully.");
+      }
     } catch {
       setError("Something went wrong. Please try again.");
       showError("Failed to upload photos. Please try again.");
