@@ -6,6 +6,7 @@ import Lightbox from "yet-another-react-lightbox";
 import "yet-another-react-lightbox/styles.css";
 import type { Photo } from "@/lib/albums";
 import { getSecurePhotoUrl } from "@/lib/photo-url";
+import { secureImageLoader } from "@/lib/image-loader";
 
 type Props = {
   photos: Photo[];
@@ -44,6 +45,7 @@ export default function PhotoGallery({ photos, albumTitle }: Props) {
               fill
               sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
               className="object-cover"
+              loader={secureImageLoader}
             />
           </div>
         ))}

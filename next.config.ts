@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
         hostname: "localhost",
       },
     ],
+    // Allow Next.js Image optimization to fetch from our internal API routes
+    loader: "default",
+    unoptimized: false,
   },
 
   // Security headers

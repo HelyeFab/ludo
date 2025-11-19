@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/Alert";
 import { useAlert } from "@/hooks/useAlert";
 import { Button } from "@/components/ui/Button";
 import { getSecurePhotoUrl } from "@/lib/photo-url";
+import { secureImageLoader } from "@/lib/image-loader";
 
 type Props = {
   album: Album;
@@ -263,6 +264,7 @@ export default function AlbumPhotoManager({ album, initialPhotos }: Props) {
                     fill
                     sizes="(max-width: 768px) 50vw, 33vw"
                     className="object-cover"
+                    loader={secureImageLoader}
                   />
                   <button
                     onClick={() => handleDeletePhoto(photo.id)}
