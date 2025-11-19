@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { put, del } from "@vercel/blob";
 import {
   getAlbumById,
   getPhotosForAlbum,
   savePhotosForAlbum,
   type Photo,
 } from "@/lib/albums";
-import { validateImageFiles, sanitizeFilename } from "@/lib/validation";
+import { validateImageFiles } from "@/lib/validation";
 import { verifyCsrfToken } from "@/lib/csrf";
+import { savePhoto, deletePhoto } from "@/lib/local-storage";
 
 // Configure route to accept larger file uploads
 export const runtime = 'nodejs';
@@ -67,26 +67,20 @@ export async function POST(
   const existing = await getPhotosForAlbum(albumId);
   const newPhotos: Photo[] = [];
 
-  // Upload each file
+  // Upload each file to local storage
   for (const file of files) {
-    const safeName = sanitizeFilename(file.name);
-    const blobPath = `albums/${albumId}/${crypto.randomUUID()}-${safeName}`;
-
     try {
-      const { url } = await put(blobPath, file, {
-        access: "public",
-        addRandomSuffix: true, // Security: prevent path prediction
-      });
+      const { id, path } = await savePhoto(albumId, file);
 
       newPhotos.push({
-        id: crypto.randomUUID(),
+        id,
         albumId,
-        url,
-        blobPath,
+        url: path, // Local path like /storage/photos/album-id/photo.jpg
+        blobPath: path, // Keep for compatibility
         createdAt: new Date().toISOString(),
       });
     } catch (error) {
-      console.error("Failed to upload file:", error);
+      console.error("Failed to save file:", error);
       return NextResponse.json(
         { error: `Failed to upload ${file.name}` },
         { status: 500 }
@@ -136,11 +130,11 @@ export async function DELETE(
     return NextResponse.json({ error: "Photo not found" }, { status: 404 });
   }
 
-  // Delete from Vercel Blob storage
+  // Delete from local storage
   try {
-    await del(photoToDelete.url);
+    await deletePhoto(photoToDelete.url);
   } catch (error) {
-    console.error("Failed to delete photo from blob storage:", error);
+    console.error("Failed to delete photo from local storage:", error);
     // Continue anyway - we'll remove it from the index
   }
 

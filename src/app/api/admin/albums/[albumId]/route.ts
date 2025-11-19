@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { del } from "@vercel/blob";
 import {
   getAlbumById,
   getAlbums,
@@ -8,6 +7,7 @@ import {
 } from "@/lib/albums";
 import { verifyCsrfToken } from "@/lib/csrf";
 import { albumSchema } from "@/lib/validation-schemas";
+import { deleteAlbumPhotos } from "@/lib/local-storage";
 
 export async function PATCH(
   req: Request,
@@ -92,26 +92,12 @@ export async function DELETE(
     return NextResponse.json({ error: "Album not found" }, { status: 404 });
   }
 
-  // Get all photos in the album
-  const photos = await getPhotosForAlbum(albumId);
-
-  // Delete all photos from blob storage
-  for (const photo of photos) {
-    try {
-      await del(photo.url);
-    } catch (error) {
-      console.error("Failed to delete photo:", photo.url, error);
-      // Continue deleting other photos
-    }
-  }
-
-  // Delete cover photo if it exists
-  if (album.coverPhotoUrl) {
-    try {
-      await del(album.coverPhotoUrl);
-    } catch (error) {
-      console.error("Failed to delete cover photo:", album.coverPhotoUrl, error);
-    }
+  // Delete all photos from local storage
+  try {
+    await deleteAlbumPhotos(albumId);
+  } catch (error) {
+    console.error("Failed to delete album photos:", error);
+    // Continue with album deletion
   }
 
   // Remove album from albums list
