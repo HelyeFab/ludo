@@ -3,6 +3,20 @@ import { getAlbums, saveAlbums, slugify, type Album } from "@/lib/albums";
 import { verifyCsrfToken } from "@/lib/csrf";
 import { albumSchema } from "@/lib/validation-schemas";
 
+export async function GET() {
+  // Return all albums for verification purposes
+  try {
+    const albums = await getAlbums();
+    return NextResponse.json({ albums });
+  } catch (error) {
+    console.error("Failed to fetch albums:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch albums" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(req: Request) {
   // Verify CSRF token
   const csrfToken = req.headers.get("x-csrf-token");
