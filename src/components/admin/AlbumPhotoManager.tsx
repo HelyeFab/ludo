@@ -16,11 +16,19 @@ type Props = {
   initialPhotos: Photo[];
 };
 
-export default function AlbumPhotoManager({ album, initialPhotos }: Props) {
+export default function AlbumPhotoManager({ album: initialAlbum, initialPhotos }: Props) {
+  const [album, setAlbum] = useState<Album>(initialAlbum);
   const [photos, setPhotos] = useState<Photo[]>(initialPhotos);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
+  const [isEditingAlbum, setIsEditingAlbum] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: initialAlbum.title,
+    subtitle: initialAlbum.subtitle || "",
+    quote: initialAlbum.quote || "",
+    date: initialAlbum.date || "",
+  });
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -127,6 +135,41 @@ export default function AlbumPhotoManager({ album, initialPhotos }: Props) {
     });
   }
 
+  async function handleUpdateAlbum(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!csrfToken) {
+      showError("Security token not available. Please refresh the page.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/albums/${album.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify(editForm),
+      });
+
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        showError(data?.error || "Failed to update album.");
+        return;
+      }
+
+      const data = (await res.json()) as { album: Album };
+      setAlbum(data.album);
+      setIsEditingAlbum(false);
+      success("Album updated successfully!");
+    } catch {
+      showError("Something went wrong. Please try again.");
+    }
+  }
+
   async function handleDeleteAlbum() {
     setConfirmDialog({
       isOpen: true,
@@ -171,35 +214,130 @@ export default function AlbumPhotoManager({ album, initialPhotos }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-rose-400 dark:text-rose-300">
-            Managing
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-rose-950 dark:text-rose-50">
-            {album.title}
-          </h1>
-          {album.subtitle && (
-            <p className="mt-1 text-sm text-rose-600 dark:text-rose-200">
-              {album.subtitle}
+      {!isEditingAlbum ? (
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-rose-400 dark:text-rose-300">
+              Managing
             </p>
-          )}
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-rose-950 dark:text-rose-50">
+              {album.title}
+            </h1>
+            {album.subtitle && (
+              <p className="mt-1 text-sm text-rose-600 dark:text-rose-200">
+                {album.subtitle}
+              </p>
+            )}
+            {album.quote && (
+              <p className="mt-2 text-xs italic text-rose-500 dark:text-rose-300">
+                "{album.quote}"
+              </p>
+            )}
+            {album.date && (
+              <p className="mt-1 text-xs text-rose-400 dark:text-rose-400">
+                {album.date}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <Link
+              href="/admin"
+              className="text-xs font-medium text-rose-500 underline-offset-4 hover:underline dark:text-rose-300"
+            >
+              ← Back to all moments
+            </Link>
+            <button
+              onClick={() => setIsEditingAlbum(true)}
+              className="text-xs font-medium text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 underline-offset-4 hover:underline"
+            >
+              Edit album details
+            </button>
+            <button
+              onClick={handleDeleteAlbum}
+              className="text-xs font-medium text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 underline-offset-4 hover:underline"
+            >
+              Delete album
+            </button>
+          </div>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <Link
-            href="/admin"
-            className="text-xs font-medium text-rose-500 underline-offset-4 hover:underline dark:text-rose-300"
-          >
-            ← Back to all moments
-          </Link>
-          <button
-            onClick={handleDeleteAlbum}
-            className="text-xs font-medium text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 underline-offset-4 hover:underline"
-          >
-            Delete album
-          </button>
-        </div>
-      </div>
+      ) : (
+        <form onSubmit={handleUpdateAlbum} className="rounded-3xl border border-rose-100 bg-white p-6 shadow-[0_20px_45px_rgba(244,114,182,0.25)] dark:border-rose-900 dark:bg-slate-900 dark:shadow-[0_20px_45px_rgba(15,23,42,0.85)]">
+          <h2 className="text-lg font-semibold text-rose-950 dark:text-rose-50 mb-4">Edit Album Details</h2>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-[0.2em] text-rose-400 dark:text-rose-300">
+                Title
+              </label>
+              <input
+                value={editForm.title}
+                onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                required
+                className="mt-1 w-full rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-950 outline-none ring-0 placeholder:text-rose-300 focus:border-rose-400 focus:bg-white focus:text-rose-950 focus:ring-2 focus:ring-rose-200 dark:border-rose-900 dark:bg-slate-800 dark:text-rose-50 dark:placeholder:text-slate-500 dark:focus:border-rose-400 dark:focus:bg-slate-800 dark:focus:text-rose-50 dark:focus:ring-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-[0.2em] text-rose-400 dark:text-rose-300">
+                Subtitle (optional)
+              </label>
+              <input
+                value={editForm.subtitle}
+                onChange={(e) => setEditForm({ ...editForm, subtitle: e.target.value })}
+                className="mt-1 w-full rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-950 outline-none ring-0 placeholder:text-rose-300 focus:border-rose-400 focus:bg-white focus:text-rose-950 focus:ring-2 focus:ring-rose-200 dark:border-rose-900 dark:bg-slate-800 dark:text-rose-50 dark:placeholder:text-slate-500 dark:focus:border-rose-400 dark:focus:bg-slate-800 dark:focus:text-rose-50 dark:focus:ring-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-[0.2em] text-rose-400 dark:text-rose-300">
+                Quote (optional)
+              </label>
+              <textarea
+                value={editForm.quote}
+                onChange={(e) => setEditForm({ ...editForm, quote: e.target.value })}
+                rows={2}
+                className="mt-1 w-full rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-950 outline-none ring-0 placeholder:text-rose-300 focus:border-rose-400 focus:bg-white focus:text-rose-950 focus:ring-2 focus:ring-rose-200 dark:border-rose-900 dark:bg-slate-800 dark:text-rose-50 dark:placeholder:text-slate-500 dark:focus:border-rose-400 dark:focus:bg-slate-800 dark:focus:text-rose-50 dark:focus:ring-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-[0.2em] text-rose-400 dark:text-rose-300">
+                Date (optional)
+              </label>
+              <input
+                value={editForm.date}
+                onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                type="date"
+                className="mt-1 w-full rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-950 outline-none ring-0 placeholder:text-rose-300 focus:border-rose-400 focus:bg-white focus:text-rose-950 focus:ring-2 focus:ring-rose-200 dark:border-rose-900 dark:bg-slate-800 dark:text-rose-50 dark:placeholder:text-slate-500 dark:focus:border-rose-400 dark:focus:bg-slate-800 dark:focus:text-rose-50 dark:focus:ring-rose-500"
+              />
+            </div>
+          </div>
+
+          <div className="mt-5 flex gap-3">
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-rose-400 via-pink-400 to-fuchsia-400 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-rose-300/60 transition hover:brightness-105 dark:from-rose-500 dark:via-pink-500 dark:to-fuchsia-500 dark:shadow-rose-900/70"
+            >
+              Save Changes
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsEditingAlbum(false);
+                setEditForm({
+                  title: album.title,
+                  subtitle: album.subtitle || "",
+                  quote: album.quote || "",
+                  date: album.date || "",
+                });
+              }}
+              className="inline-flex items-center justify-center rounded-2xl border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:bg-slate-800 dark:text-rose-300 dark:hover:bg-slate-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
 
       <form
         onSubmit={handleUpload}
