@@ -20,33 +20,44 @@ export type Photo = {
   createdAt: string; // ISO string
 };
 
-const ALBUMS_INDEX_KEY = "albums/index.json";
+const ALBUMS_INDEX_PREFIX = "albums/index";
 
 function photosKey(albumId: string) {
-  return `albums/${albumId}/photos.json`;
+  return `albums/${albumId}/photos`;
 }
 
 export async function getAlbums(): Promise<Album[]> {
-  const { blobs } = await list({ prefix: ALBUMS_INDEX_KEY, limit: 1 });
+  const { blobs } = await list({ prefix: ALBUMS_INDEX_PREFIX, limit: 1 });
+
+  console.log("[DEBUG] getAlbums - found blobs:", blobs.length);
+  if (blobs.length > 0) {
+    console.log("[DEBUG] Latest blob:", blobs[0].pathname, "uploaded:", blobs[0].uploadedAt);
+  }
 
   if (!blobs.length) {
     return [];
   }
 
   const res = await fetch(blobs[0].downloadUrl, { cache: "no-store" });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.log("[DEBUG] Failed to fetch blob, status:", res.status);
+    return [];
+  }
 
   const data = (await res.json()) as Album[];
+  console.log("[DEBUG] Loaded albums:", Array.isArray(data) ? data.length : "invalid data");
   return Array.isArray(data) ? data : [];
 }
 
 export async function saveAlbums(albums: Album[]): Promise<void> {
   // Note: Authentication is verified by middleware and API routes
-  await put(ALBUMS_INDEX_KEY, JSON.stringify(albums, null, 2), {
+  console.log("[DEBUG] Saving albums:", albums.length, "albums");
+  const result = await put(ALBUMS_INDEX_PREFIX + ".json", JSON.stringify(albums, null, 2), {
     access: "public",
     contentType: "application/json",
     addRandomSuffix: true, // Security: prevent path prediction
   });
+  console.log("[DEBUG] Saved to blob:", result.url);
 }
 
 export async function getAlbumBySlug(slug: string): Promise<Album | null> {

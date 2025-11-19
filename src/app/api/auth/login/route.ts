@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcrypt";
 import {
   isRateLimited,
   recordLoginAttempt,
   clearLoginAttempts,
 } from "@/lib/auth";
+import { createAdminSession } from "@/lib/session";
 
 export async function POST(req: Request) {
   // Get IP address for rate limiting
@@ -35,7 +37,20 @@ export async function POST(req: Request) {
     );
   }
 
-  if (password !== expected) {
+  // Check if password is hashed (starts with $2b$ for bcrypt)
+  let isValid = false;
+  if (expected.startsWith("$2b$") || expected.startsWith("$2a$")) {
+    // Password is hashed, use bcrypt to compare
+    isValid = await bcrypt.compare(password, expected);
+  } else {
+    // Password is plain text (for backward compatibility during migration)
+    isValid = password === expected;
+    console.warn(
+      "⚠️  WARNING: Using plain text password. Please hash your ADMIN_PASSWORD with bcrypt."
+    );
+  }
+
+  if (!isValid) {
     // Record failed attempt
     recordLoginAttempt(ip);
     return NextResponse.json({ error: "Incorrect password" }, { status: 401 });
@@ -44,15 +59,8 @@ export async function POST(req: Request) {
   // Clear login attempts on success
   clearLoginAttempts(ip);
 
-  const res = NextResponse.json({ ok: true });
+  // Create admin session using iron-session
+  await createAdminSession();
 
-  res.cookies.set("admin_auth", "1", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
-  });
-
-  return res;
+  return NextResponse.json({ ok: true });
 }

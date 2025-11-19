@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAlbums, saveAlbums, slugify, type Album } from "@/lib/albums";
-import {
-  validateAlbumTitle,
-  validateOptionalText,
-} from "@/lib/validation";
 import { verifyCsrfToken } from "@/lib/csrf";
+import { albumSchema } from "@/lib/validation-schemas";
 
 export async function POST(req: Request) {
   // Verify CSRF token
@@ -18,41 +15,19 @@ export async function POST(req: Request) {
     );
   }
 
+  // Parse and validate request body
   const body = await req.json().catch(() => null);
-  if (!body || typeof body.title !== "string") {
-    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-  }
 
-  const title = body.title.trim();
-  const subtitle = typeof body.subtitle === "string" ? body.subtitle.trim() : undefined;
-  const quote = typeof body.quote === "string" ? body.quote.trim() : undefined;
-  const date = typeof body.date === "string" && body.date.length ? body.date : undefined;
-
-  // Validate title
-  const titleValidation = validateAlbumTitle(title);
-  if (!titleValidation.valid) {
+  const validationResult = albumSchema.safeParse(body);
+  if (!validationResult.success) {
+    const firstError = validationResult.error.issues[0];
     return NextResponse.json(
-      { error: titleValidation.error },
+      { error: firstError.message },
       { status: 400 }
     );
   }
 
-  // Validate optional fields
-  const subtitleValidation = validateOptionalText(subtitle, 200);
-  if (!subtitleValidation.valid) {
-    return NextResponse.json(
-      { error: subtitleValidation.error },
-      { status: 400 }
-    );
-  }
-
-  const quoteValidation = validateOptionalText(quote, 500);
-  if (!quoteValidation.valid) {
-    return NextResponse.json(
-      { error: quoteValidation.error },
-      { status: 400 }
-    );
-  }
+  const { title, subtitle, quote, date } = validationResult.data;
 
   const existing = await getAlbums();
 

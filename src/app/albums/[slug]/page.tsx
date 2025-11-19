@@ -1,6 +1,6 @@
-import Image from "next/image";
 import Link from "next/link";
 import { getAlbumBySlug, getPhotosForAlbum } from "@/lib/albums";
+import PhotoGallery from "@/components/PhotoGallery";
 
 export const dynamic = "force-dynamic";
 
@@ -82,24 +82,7 @@ export default async function AlbumPage({
             admin adds them.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-            {photos.map((photo) => (
-              <div
-                key={photo.id}
-                className="overflow-hidden rounded-3xl border border-rose-100/80 bg-rose-50/60 shadow-sm shadow-rose-100/60 dark:border-rose-900/70 dark:bg-slate-900/80 dark:shadow-slate-900/80"
-              >
-                <div className="relative aspect-[4/5]">
-                  <Image
-                    src={photo.url}
-                    alt={album.title}
-                    fill
-                    sizes="(max-width: 768px) 50vw, 33vw"
-                    className="object-cover"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+          <PhotoGallery photos={photos} albumTitle={album.title} />
         )}
       </section>
     </div>

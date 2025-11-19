@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import {
   getAlbumById,
   getPhotosForAlbum,
@@ -86,4 +86,55 @@ export async function POST(
   await savePhotosForAlbum(albumId, allPhotos);
 
   return NextResponse.json({ photos: newPhotos });
+}
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ albumId: string }> },
+) {
+  const { albumId } = await params;
+
+  // Verify CSRF token
+  const csrfToken = req.headers.get("x-csrf-token");
+  const isValidCsrf = await verifyCsrfToken(csrfToken);
+
+  if (!isValidCsrf) {
+    return NextResponse.json(
+      { error: "Invalid CSRF token" },
+      { status: 403 }
+    );
+  }
+
+  const album = await getAlbumById(albumId);
+  if (!album) {
+    return NextResponse.json({ error: "Album not found" }, { status: 404 });
+  }
+
+  const body = await req.json().catch(() => null);
+  const photoId = body?.photoId;
+
+  if (!photoId || typeof photoId !== "string") {
+    return NextResponse.json({ error: "Invalid photo ID" }, { status: 400 });
+  }
+
+  const photos = await getPhotosForAlbum(albumId);
+  const photoToDelete = photos.find((p) => p.id === photoId);
+
+  if (!photoToDelete) {
+    return NextResponse.json({ error: "Photo not found" }, { status: 404 });
+  }
+
+  // Delete from Vercel Blob storage
+  try {
+    await del(photoToDelete.url);
+  } catch (error) {
+    console.error("Failed to delete photo from blob storage:", error);
+    // Continue anyway - we'll remove it from the index
+  }
+
+  // Remove from photos list
+  const updatedPhotos = photos.filter((p) => p.id !== photoId);
+  await savePhotosForAlbum(albumId, updatedPhotos);
+
+  return NextResponse.json({ ok: true });
 }
